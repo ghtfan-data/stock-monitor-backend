@@ -1,6 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const yahooFinance = require('yahoo-finance2').default;
 const axios = require('axios');
 
 const app = express();
@@ -8,24 +7,17 @@ const app = express();
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
-// ==================== إعداد قاعدة بيانات مؤقتة ====================
-let stocksCache = {
-  saudi: [],
-  us: [],
-  lastUpdate: null
-};
+// ==================== قاعدة بيانات الأسهم المؤقتة ====================
+let saudiStocksCache = [];
 
-// ==================== 1. جلب جميع الأسهم السعودية من مصدر خارجي ====================
-// استخدام مصدر CSV محدث تلقائيًا من GitHub (يحتوي على 212+ سهم)
+// ==================== 1. جلب قائمة الأسهم السعودية من مصدر CSV موثوق ====================
 const SAUDI_SYMBOLS_URL = 'https://raw.githubusercontent.com/Hussain-Alsalman/tasi/master/data-raw/saudi_tickers.csv';
 
-async function fetchSaudiSymbolsFromSource() {
+async function fetchSaudiSymbols() {
   try {
-    console.log("🇸🇦 جاري جلب قائمة الأسهم السعودية من المصدر...");
+    console.log("🇸🇦 جاري تحميل قائمة الأسهم السعودية...");
     const response = await axios.get(SAUDI_SYMBOLS_URL);
     const csvData = response.data;
-    
-    // تحويل CSV إلى مصفوفة
     const lines = csvData.split('\n');
     const headers = lines[0].split(',');
     
@@ -47,57 +39,113 @@ async function fetchSaudiSymbolsFromSource() {
         stocks.push(stock);
       }
     }
-    
-    console.log(`✅ تم جلب ${stocks.length} سهماً سعودياً من المصدر`);
+    console.log(`✅ تم تحميل ${stocks.length} سهماً سعودياً بنجاح.`);
     return stocks;
   } catch (error) {
-    console.error("❌ فشل جلب الأسهم السعودية:", error.message);
-    return [];
+    console.error("❌ فشل تحميل الأسهم السعودية، سيتم استخدام القائمة اليدوية كبديل.", error.message);
+    // قائمة أولية صغيرة للغرض الأساسي
+    return [
+      { symbol: "2222", nameAr: "سابك", nameEn: "SABIC", sector: "البتروكيماويات", market: "SAUDI" },
+      { symbol: "1120", nameAr: "الراجحي", nameEn: "Al Rajhi Bank", sector: "البنوك", market: "SAUDI" },
+      { symbol: "6017", nameAr: "جاهز", nameEn: "Jahiz", sector: "الخدمات الاستهلاكية", market: "SAUDI" },
+    ];
   }
 }
 
-// ==================== 2. جلب الأسهم الأمريكية من ياهو فاينانس ديناميكيًا ====================
-// بدلاً من قائمة ثابتة، سنستخدم البحث المباشر في ياهو فاينانس
-// هذا يعني أن أي سهم أمريكي يبحث عنه المستخدم سيتم جلب بياناته فورًا
-
-// ==================== 3. تحديث البيانات الحية من ياهو فاينانس ====================
-async function getLiveData(symbol, market) {
+// ==================== 2. الحصول على البيانات الحية من Yahoo Finance API مباشرةً ====================
+async function getLiveDataFromYahoo(symbol, market = 'US') {
   try {
     let yahooSymbol = symbol;
     if (market === 'SAUDI') {
       yahooSymbol = `${symbol}.SR`;
     }
     
-    const quote = await yahooFinance.quote(yahooSymbol);
+    // استخدام واجهة Yahoo Finance العامة للحصول على البيانات
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}`;
+    const response = await axios.get(url, { timeout: 8000 });
+    const result = response.data.chart.result[0];
+    
+    if (!result) {
+      throw new Error('No data found');
+    }
+    
+    const meta = result.meta;
+    const quote = result.indicators.quote[0];
+    const currentPrice = meta.regularMarketPrice;
+    const previousClose = meta.chartPreviousClose || meta.previousClose;
+    const change = currentPrice - previousClose;
+    const changePercent = (change / previousClose) * 100;
+    
     return {
-      price: quote.regularMarketPrice,
-      change: quote.regularMarketChange,
-      changePercent: quote.regularMarketChangePercent,
-      volume: quote.regularMarketVolume,
-      high: quote.regularMarketDayHigh,
-      low: quote.regularMarketDayLow,
-      open: quote.regularMarketOpen,
-      marketCap: quote.marketCap,
-      pe: quote.trailingPE,
-      eps: quote.epsTrailingTwelveMonths,
-      dividendYield: quote.dividendYield ? quote.dividendYield * 100 : 0
+      price: currentPrice,
+      change: +change.toFixed(2),
+      changePercent: +changePercent.toFixed(2),
+      volume: meta.regularMarketVolume,
+      high: quote.high?.[quote.high.length - 1] || currentPrice,
+      low: quote.low?.[quote.low.length - 1] || currentPrice,
+      open: quote.open?.[quote.open.length - 1] || currentPrice,
+      marketCap: meta.marketCap,
+      longName: meta.longName,
     };
   } catch (error) {
-    console.log(`⚠️ لا يمكن جلب بيانات ${symbol}: ${error.message}`);
-    // بيانات افتراضية في حالة فشل الجلب
+    console.log(`⚠️ فشل جلب البيانات لـ ${symbol}: ${error.message}`);
+    // بيانات تجريبية للاختبار في حالة فشل الاتصال
     return {
-      price: 100 + Math.random() * 200,
-      change: (Math.random() - 0.5) * 5,
-      changePercent: (Math.random() - 0.5) * 4,
+      price: +(100 + Math.random() * 200).toFixed(2),
+      change: +(Math.random() - 0.5).toFixed(2),
+      changePercent: +((Math.random() - 0.5) * 4).toFixed(2),
       volume: Math.floor(Math.random() * 5000000),
-      high: null, low: null, open: null
     };
   }
 }
 
-// حساب المؤشرات الفنية بناءً على السعر الحالي
+// ==================== 3. البحث عن سهم (في القائمة المحلية أو مباشرة من Yahoo) ====================
+async function findStock(query) {
+  if (!query) return null;
+  const searchTerm = query.toString().toUpperCase().trim();
+  
+  // 1. البحث في قائمة الأسهم السعودية (إذا كانت محملة)
+  if (saudiStocksCache.length > 0) {
+    const found = saudiStocksCache.find(s => 
+      s.symbol === searchTerm || 
+      s.nameAr?.includes(searchTerm) || 
+      s.nameEn?.toUpperCase().includes(searchTerm)
+    );
+    if (found) {
+      // محاولة جلب الاسم الكامل من Yahoo
+      try {
+        const liveData = await getLiveDataFromYahoo(found.symbol, 'SAUDI');
+        if (liveData.longName) {
+          found.nameEn = liveData.longName;
+        }
+      } catch(e) {}
+      return { ...found, market: 'SAUDI' };
+    }
+  }
+  
+  // 2. البحث مباشرة في Yahoo Finance (لأي سهم أمريكي أو للتحقق من الصحة)
+  try {
+    const liveData = await getLiveDataFromYahoo(searchTerm, 'US');
+    if (liveData && liveData.price) {
+      return {
+        symbol: searchTerm,
+        nameAr: liveData.longName || searchTerm,
+        nameEn: liveData.longName,
+        sector: 'غير محدد',
+        market: 'US',
+        price: liveData.price
+      };
+    }
+  } catch (e) {
+    // الفشل في العثور عليه في Yahoo
+  }
+  
+  return null;
+}
+
+// ==================== 4. حساب المؤشرات الفنية ====================
 function calculateIndicators(price) {
-  const rsi = Math.floor(Math.random() * 60) + 20; // محاكاة RSI
+  const rsi = Math.floor(Math.random() * 60) + 20;
     
   let signal = 'NEUTRAL';
   let signalStrength = 'محايد';
@@ -143,100 +191,51 @@ function calculateIndicators(price) {
   };
 }
 
-// ==================== 4. البحث عن سهم (سعودي أو أمريكي) ====================
-let saudiStocksList = [];
+// ==================== 5. Routes API ====================
 
-async function findStock(query) {
-  if (!query) return null;
-  const searchTerm = query.toString().toUpperCase().trim();
-  
-  // 1. البحث في الأسهم السعودية المخزنة مؤقتًا
-  if (saudiStocksList.length > 0) {
-    const found = saudiStocksList.find(s => 
-      s.symbol === searchTerm || 
-      s.nameAr?.includes(searchTerm) ||
-      s.nameEn?.toUpperCase().includes(searchTerm)
-    );
-    if (found) return { ...found, market: 'SAUDI' };
-  }
-  
-  // 2. إذا لم يوجد، جرب البحث مباشرة في ياهو فاينانس (للسوق الأمريكي أو السعودي)
-  try {
-    // محاولة كسهم أمريكي أولاً
-    const quote = await yahooFinance.quote(searchTerm);
-    if (quote && quote.regularMarketPrice) {
-      return {
-        symbol: searchTerm,
-        nameAr: quote.shortName || quote.longName,
-        nameEn: quote.longName,
-        sector: quote.sector,
-        market: 'US',
-        price: quote.regularMarketPrice
-      };
-    }
-  } catch(e) {
-    // جرب كسهم سعودي
-    try {
-      const quote = await yahooFinance.quote(`${searchTerm}.SR`);
-      if (quote && quote.regularMarketPrice) {
-        return {
-          symbol: searchTerm,
-          nameAr: quote.shortName || quote.longName,
-          nameEn: quote.longName,
-          sector: quote.sector,
-          market: 'SAUDI',
-          price: quote.regularMarketPrice
-        };
-      }
-    } catch(e2) {}
-  }
-  
-  return null;
-}
+// نقطة النهاية لفحص صحة الخادم
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'online', 
+    message: 'Stock Monitor API is running',
+    endpoints: ['/api/stocks/saudi', '/api/analysis/analyze']
+  });
+});
 
-// ==================== 5. تهيئة قاعدة البيانات عند بدء التشغيل ====================
-async function initializeDatabase() {
-  console.log("🚀 جاري تهيئة قاعدة بيانات الأسهم...");
-  saudiStocksList = await fetchSaudiSymbolsFromSource();
-  
-  if (saudiStocksList.length === 0) {
-    // بيانات احتياطية صغيرة جدًا في حالة فشل الجلب
-    saudiStocksList = [
-      { symbol: "2222", nameAr: "سابك", nameEn: "SABIC", sector: "البتروكيماويات" },
-      { symbol: "1120", nameAr: "الراجحي", nameEn: "Al Rajhi Bank", sector: "البنوك" },
-      { symbol: "6017", nameAr: "جاهز", nameEn: "Jahiz", sector: "الخدمات الاستهلاكية" },
-      { symbol: "7202", nameAr: "أرامكو", nameEn: "Saudi Aramco", sector: "الطاقة" }
-    ];
-  }
-  
-  console.log(`✅ قاعدة البيانات جاهزة - ${saudiStocksList.length} سهماً سعودياً + الأسهم الأمريكية عبر API`);
-}
-
-// ==================== 6. Routes API ====================
-
+// جلب قائمة الأسهم السعودية (أول 50 سهماً للاختبار)
 app.get('/api/stocks/saudi', async (req, res) => {
   const stocksWithData = await Promise.all(
-    saudiStocksList.slice(0, 50).map(async (stock) => {
-      const liveData = await getLiveData(stock.symbol, 'SAUDI');
+    saudiStocksCache.slice(0, 50).map(async (stock) => {
+      const liveData = await getLiveDataFromYahoo(stock.symbol, 'SAUDI');
       const indicators = calculateIndicators(liveData.price);
       return { ...stock, ...liveData, ...indicators };
     })
   );
-  res.json({ stocks: stocksWithData, count: saudiStocksList.length });
+  res.json({ 
+    stocks: stocksWithData, 
+    totalCount: saudiStocksCache.length,
+    lastUpdate: new Date()
+  });
 });
 
+// نقطة النهاية الرئيسية للبحث عن سهم وتحليله
 app.post('/api/analysis/analyze', async (req, res) => {
   const { query } = req.body;
   console.log(`🔍 البحث عن: ${query}`);
   
+  if (!query) {
+    return res.json({ error: true, message: "الرجاء إدخال رقم أو اسم السهم" });
+  }
+  
   const stockInfo = await findStock(query);
   
   if (!stockInfo) {
-    return res.json({ error: true, message: `❌ لم يتم العثور على سهم: ${query}` });
+    return res.json({ error: true, message: `❌ لم يتم العثور على سهم بالرقم أو الاسم: ${query}` });
   }
   
-  const liveData = await getLiveData(stockInfo.symbol, stockInfo.market);
-  const indicators = calculateIndicators(liveData.price);
+  // جلب البيانات الحية
+  const liveData = await getLiveDataFromYahoo(stockInfo.symbol, stockInfo.market);
+  const indicators = calculateIndicators(liveData.price || 100);
   
   const buyConditions = [
     indicators.rsi < 35 ? "✅ RSI في منطقة شراء" : indicators.rsi > 70 ? "❌ RSI في منطقة بيع" : "🟡 RSI محايد",
@@ -251,7 +250,7 @@ app.post('/api/analysis/analyze', async (req, res) => {
   res.json({
     symbol: stockInfo.symbol,
     name: stockInfo.nameAr || stockInfo.nameEn,
-    sector: stockInfo.sector,
+    sector: stockInfo.sector || 'غير محدد',
     market: stockInfo.market,
     currentPrice: liveData.price,
     change: liveData.change,
@@ -271,8 +270,8 @@ app.post('/api/analysis/analyze', async (req, res) => {
     signal: indicators.signal,
     signalStrength: indicators.signalStrength,
     score: indicators.score,
-    buyConditions,
-    buyConditionsCount,
+    buyConditions: buyConditions,
+    buyConditionsCount: buyConditionsCount,
     targets: indicators.targets,
     stopLoss: indicators.stopLoss,
     recommendation: indicators.signal === 'STRONG_BUY' ? "💰 شراء قوي" : 
@@ -282,22 +281,18 @@ app.post('/api/analysis/analyze', async (req, res) => {
   });
 });
 
-app.get('/api/stocks', (req, res) => {
-  res.json({ 
-    message: "API يعمل بشكل طبيعي",
-    saudiStocksCount: saudiStocksList.length,
-    endpoints: ["/api/stocks/saudi", "/api/analysis/analyze"],
-    lastUpdate: stocksCache.lastUpdate
-  });
-});
-
-// ==================== 7. تشغيل الخادم ====================
+// ==================== 6. تشغيل الخادم ====================
 const PORT = process.env.PORT || 10000;
 
-initializeDatabase().then(() => {
+async function startServer() {
+  // تحميل قائمة الأسهم السعودية أولاً
+  saudiStocksCache = await fetchSaudiSymbols();
+  
   app.listen(PORT, () => {
     console.log(`\n✅ خادم التحليل يعمل على المنفذ ${PORT}`);
-    console.log(`📊 الأسهم السعودية المتاحة: ${saudiStocksList.length}`);
-    console.log(`🌐 API متاح للاستخدام`);
+    console.log(`📊 الأسهم السعودية المتاحة: ${saudiStocksCache.length}`);
+    console.log(`🌐 API جاهز للاستخدام`);
   });
-});
+}
+
+startServer();
