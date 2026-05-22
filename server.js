@@ -3,18 +3,17 @@ const cors = require('cors');
 
 const app = express();
 
-// إعدادات CORS
+// إعدادات CORS لموقعك فقط
 app.use(cors({
   origin: ['https://stocks.techprosa.net', 'http://stocks.techprosa.net'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
-
 app.use(express.json());
 
-// ============= قاعدة بيانات الأسهم الكاملة =============
+// ==================== قاعدة البيانات الموسعة ====================
 const stocksDatabase = [
-  // أسهم سعودية
+  // --- الأسهم السعودية ---
   { symbol: "2222", name: "سابك", sector: "البتروكيماويات", market: "SAUDI", marketCap: "كبير", pe: 18.5, eps: 4.2, dividend: 3.2 },
   { symbol: "1120", name: "الراجحي", sector: "البنوك", market: "SAUDI", marketCap: "كبير", pe: 15.2, eps: 5.6, dividend: 4.1 },
   { symbol: "1180", name: "الأهلي", sector: "البنوك", market: "SAUDI", marketCap: "كبير", pe: 14.8, eps: 5.1, dividend: 3.8 },
@@ -32,7 +31,7 @@ const stocksDatabase = [
   { symbol: "7030", name: "زين", sector: "الاتصالات", market: "SAUDI", marketCap: "كبير", pe: 16.8, eps: 4.1, dividend: 2.8 },
   { symbol: "7202", name: "أرامكو", sector: "الطاقة", market: "SAUDI", marketCap: "كبير", pe: 11.2, eps: 8.5, dividend: 6.2 },
   
-  // أسهم أمريكية
+  // --- الأسهم الأمريكية ---
   { symbol: "AAPL", name: "Apple Inc.", sector: "التقنية", market: "US", marketCap: "كبير", pe: 28.5, eps: 6.2, dividend: 0.5 },
   { symbol: "MSFT", name: "Microsoft", sector: "التقنية", market: "US", marketCap: "كبير", pe: 32.1, eps: 11.5, dividend: 0.8 },
   { symbol: "GOOGL", name: "Google", sector: "التقنية", market: "US", marketCap: "كبير", pe: 25.3, eps: 5.8, dividend: 0 },
@@ -49,252 +48,112 @@ const stocksDatabase = [
   { symbol: "BAC", name: "Bank of America", sector: "البنوك", market: "US", marketCap: "كبير", pe: 10.2, eps: 3.8, dividend: 2.1 }
 ];
 
-// ============= وظائف التحليل الفني =============
-function calculateRSI(prices, period = 14) {
-  // محاكاة RSI واقعية
-  return Math.min(95, Math.max(5, 50 + (Math.random() - 0.5) * 50));
-}
+// ==================== دوال التحليل الفني المحسنة ====================
 
-function calculateMACD(prices) {
-  return {
-    macd: +(Math.random() * 2 - 1).toFixed(2),
-    signal: +(Math.random() * 2 - 1).toFixed(2),
-    histogram: +(Math.random() * 1 - 0.5).toFixed(2)
-  };
-}
+// دالة مساعدة لتوليد أرقام عشوائية ضمن نطاق
+const rand = (min, max) => +(Math.random() * (max - min) + min).toFixed(2);
 
-function calculateSMA(prices, period) {
-  const lastPrice = prices[prices.length - 1];
-  return +(lastPrice * (1 + (Math.random() - 0.5) * 0.1)).toFixed(2);
-}
+// دالة مساعدة للـ RSI
+const getRsi = () => Math.floor(rand(20, 85));
 
-function calculateBollingerBands(prices, period = 20, stdDev = 2) {
-  const lastPrice = prices[prices.length - 1];
-  const band = lastPrice * 0.05;
-  return {
-    upper: +(lastPrice + band).toFixed(2),
-    middle: +lastPrice.toFixed(2),
-    lower: +(lastPrice - band).toFixed(2)
-  };
-}
+// دالة MACD محاكاة
+const getMacd = () => ({ macd: rand(-1.5, 1.5), signal: rand(-1, 1), histogram: rand(-0.8, 0.8) });
 
-function calculateATR(highs, lows, closes, period = 14) {
-  const lastClose = closes[closes.length - 1];
-  return +(lastClose * 0.03).toFixed(2);
-}
+// دالة المتوسطات
+const getSma = (price) => +(price * rand(0.95, 1.05)).toFixed(2);
 
-function calculateOBV(closes, volumes) {
-  return Math.floor(Math.random() * 1000000);
-}
+// دالة بولينجر باند (محسنة وآمنة)
+const getBollinger = (price) => {
+  const band = +(price * 0.05).toFixed(2);
+  return { upper: +(price + band).toFixed(2), middle: +price.toFixed(2), lower: +(price - band).toFixed(2) };
+};
 
-function calculateFibonacci(high, low) {
-  const range = high - low;
-  return {
-    r0: low,
-    r236: +(low + range * 0.236).toFixed(2),
-    r382: +(low + range * 0.382).toFixed(2),
-    r500: +(low + range * 0.5).toFixed(2),
-    r618: +(low + range * 0.618).toFixed(2),
-    r786: +(low + range * 0.786).toFixed(2),
-    r100: high
-  };
-}
+// دالة ATR
+const getAtr = (price) => +(price * rand(0.02, 0.04)).toFixed(2);
 
-// ============= توليد بيانات السهم الحية =============
+// دالة فيبوناتشي
+const getFibonacci = (price) => {
+  const high = +(price * 1.1).toFixed(2), low = +(price * 0.9).toFixed(2);
+  const diff = high - low;
+  return { r0: low, r236: +(low + diff * 0.236).toFixed(2), r382: +(low + diff * 0.382).toFixed(2), r500: +(low + diff * 0.5).toFixed(2), r618: +(low + diff * 0.618).toFixed(2), r786: +(low + diff * 0.786).toFixed(2), r100: high };
+};
+
+// ==================== توليد بيانات السهم ====================
 function generateStockData(stockInfo) {
-  const basePrice = 50 + Math.random() * 300;
-  const changePercent = (Math.random() - 0.5) * 5;
-  const currentPrice = +(basePrice * (1 + changePercent / 100)).toFixed(2);
-  const rsiValue = calculateRSI([]);
+  const changePercent = rand(-4.5, 4.5);
+  const price = +(rand(30, 500) * (1 + changePercent / 100)).toFixed(2);
+  const rsi = getRsi();
   
-  // تحديد الإشارة بناءً على RSI
-  let signal = 'NEUTRAL';
-  let signalStrength = 'محايد';
+  let signal = 'NEUTRAL', signalStrength = 'محايد';
   let score = 50;
-  
-  if (rsiValue < 35) {
-    signal = 'STRONG_BUY';
-    signalStrength = 'قوية جداً';
-    score = 85 + Math.random() * 15;
-  } else if (rsiValue < 50) {
-    signal = 'BUY';
-    signalStrength = 'متوسطة';
-    score = 65 + Math.random() * 15;
-  } else if (rsiValue > 75) {
-    signal = 'SELL';
-    signalStrength = 'قوية';
-    score = 20 + Math.random() * 15;
-  } else if (rsiValue > 65) {
-    signal = 'WATCH';
-    signalStrength = 'ضعيفة';
-    score = 35 + Math.random() * 15;
-  }
-  
-  // حساب الأهداف
-  const atr = currentPrice * 0.03;
+  if (rsi < 35) { signal = 'STRONG_BUY'; signalStrength = 'قوية جداً'; score = rand(85, 98); }
+  else if (rsi < 50) { signal = 'BUY'; signalStrength = 'متوسطة'; score = rand(65, 84); }
+  else if (rsi > 75) { signal = 'SELL'; signalStrength = 'قوية'; score = rand(15, 30); }
+  else if (rsi > 65) { signal = 'WATCH'; signalStrength = 'ضعيفة'; score = rand(35, 49); }
+
+  const atr = getAtr(price);
   const targets = [
-    { level: 1, price: +(currentPrice + atr * 1.5).toFixed(2), profitPercent: +(atr * 1.5 / currentPrice * 100).toFixed(1) },
-    { level: 2, price: +(currentPrice + atr * 2.5).toFixed(2), profitPercent: +(atr * 2.5 / currentPrice * 100).toFixed(1) },
-    { level: 3, price: +(currentPrice + atr * 4).toFixed(2), profitPercent: +(atr * 4 / currentPrice * 100).toFixed(1) }
+    { level: 1, price: +(price + atr * 1.5).toFixed(2), profitPercent: +((atr * 1.5 / price) * 100).toFixed(1) },
+    { level: 2, price: +(price + atr * 2.5).toFixed(2), profitPercent: +((atr * 2.5 / price) * 100).toFixed(1) },
+    { level: 3, price: +(price + atr * 4).toFixed(2), profitPercent: +((atr * 4 / price) * 100).toFixed(1) }
   ];
-  const stopLoss = +(currentPrice - atr * 1.5).toFixed(2);
-  
+
   return {
-    symbol: stockInfo.symbol,
-    name: stockInfo.name,
-    sector: stockInfo.sector,
-    market: stockInfo.market,
-    marketCap: stockInfo.marketCap,
-    pe: stockInfo.pe,
-    eps: stockInfo.eps,
-    dividend: stockInfo.dividend,
-    price: currentPrice,
-    change: +(changePercent).toFixed(2),
-    changePercent: +changePercent.toFixed(2),
+    ...stockInfo,
+    price, change: +changePercent.toFixed(2), changePercent: +changePercent.toFixed(2),
     volume: Math.floor(Math.random() * 5000000),
-    high: +(currentPrice * (1 + Math.random() * 0.03)).toFixed(2),
-    low: +(currentPrice * (1 - Math.random() * 0.03)).toFixed(2),
-    open: +(currentPrice * (1 + (Math.random() - 0.5) * 0.02)).toFixed(2),
-    rsi: rsiValue,
-    macd: calculateMACD([]),
-    sma50: calculateSMA([], 50),
-    sma200: calculateSMA([], 200),
-    bollinger: calculateBollingerBands([]),
-    atr: calculateATR([], [], []),
-    obv: calculateOBV([], []),
-    fibonacci: calculateFibonacci(currentPrice * 1.1, currentPrice * 0.9),
-    signal: signal,
-    signalStrength: signalStrength,
-    score: score,
-    targets: targets,
-    stopLoss: stopLoss
+    high: +(price * rand(1.01, 1.04)).toFixed(2), low: +(price * rand(0.96, 0.99)).toFixed(2), open: +(price * rand(0.98, 1.02)).toFixed(2),
+    rsi, macd: getMacd(), sma50: getSma(price), sma200: getSma(price), bollinger: getBollinger(price),
+    atr, fibonacci: getFibonacci(price), obv: Math.floor(Math.random() * 1000000),
+    signal, signalStrength, score: +score.toFixed(2), targets, stopLoss: +(price - atr * 1.5).toFixed(2)
   };
 }
 
-// ============= البحث عن السهم بالرقم أو الاسم =============
+// ==================== البحث عن السهم ====================
 function findStock(query) {
-  // البحث بالرقم (symbol)
-  let stock = stocksDatabase.find(s => s.symbol === query.toUpperCase());
-  
-  // إذا لم يوجد، البحث بالاسم
-  if (!stock) {
-    stock = stocksDatabase.find(s => s.name.includes(query) || query.includes(s.name));
-  }
-  
-  return stock;
+  if (!query) return null;
+  const searchTerm = query.toString().toUpperCase().trim();
+  return stocksDatabase.find(s => s.symbol === searchTerm || s.name.toUpperCase().includes(searchTerm));
 }
 
-// بيانات حية لجميع الأسهم
-let stocksData = stocksDatabase.map(s => generateStockData(s));
+// ==================== تهيئة البيانات والخادم ====================
+let stocksData = stocksDatabase.map(generateStockData);
+setInterval(() => { stocksData = stocksDatabase.map(generateStockData); console.log('🔄 تحديث البيانات:', new Date().toLocaleTimeString()); }, 30000);
 
-// تحديث البيانات كل 30 ثانية
-setInterval(() => {
-  stocksData = stocksDatabase.map(s => generateStockData(s));
-  console.log('🔄 تم تحديث بيانات جميع الأسهم', new Date().toLocaleTimeString());
-}, 30000);
+// ==================== Routes API ====================
+app.get('/api/stocks', (req, res) => res.json({ stocks: stocksData, lastUpdate: new Date() }));
 
-// ============= API Routes =============
-
-// جلب جميع الأسهم
-app.get('/api/stocks', (req, res) => {
-  res.json({ stocks: stocksData, lastUpdate: new Date() });
-});
-
-// تحليل سهم محدد (بحث بالرقم أو الاسم)
 app.post('/api/analysis/analyze', (req, res) => {
-  const { query, market } = req.body;
-  
-  // البحث عن السهم بالرقم أو الاسم
+  const { query } = req.body;
   const stockInfo = findStock(query);
-  
-  if (!stockInfo) {
-    return res.json({
-      error: true,
-      message: `لم يتم العثور على سهم بالرقم أو الاسم: ${query}`,
-      symbol: query,
-      name: "غير موجود"
-    });
-  }
-  
-  // جلب البيانات الحية للسهم
+  if (!stockInfo) return res.json({ error: true, message: `❌ لم يتم العثور على سهم لـ: ${query}` });
+
   const stock = stocksData.find(s => s.symbol === stockInfo.symbol);
-  
-  if (!stock) {
-    return res.json({ error: true, message: "بيانات السهم غير متوفرة حالياً" });
-  }
-  
-  // إعداد التحليل الكامل
-  const analysis = {
-    // معلومات أساسية
-    symbol: stock.symbol,
-    name: stock.name,
-    sector: stock.sector,
-    market: stock.market,
-    marketCap: stock.marketCap,
-    
-    // البيانات الحالية
-    currentPrice: stock.price,
-    change: stock.change,
-    changePercent: stock.changePercent,
-    volume: stock.volume,
-    high: stock.high,
-    low: stock.low,
-    open: stock.open,
-    
-    // المؤشرات الفنية
-    indicators: {
-      rsi: stock.rsi,
-      macd: stock.macd,
-      sma50: stock.sma50,
-      sma200: stock.sma200,
-      bollinger: stock.bollinger,
-      atr: stock.atr,
-      obv: stock.obv,
-      fibonacci: stock.fibonacci
-    },
-    
-    // التحليل المالي
-    financial: {
-      pe: stock.pe,
-      eps: stock.eps,
-      dividend: stock.dividend,
-      dividendYield: +(stock.dividend / stock.price * 100).toFixed(2)
-    },
-    
-    // الإشارة والتوصية
-    signal: stock.signal,
-    signalStrength: stock.signalStrength,
-    score: +stock.score.toFixed(2),
-    
-    // شروط الشراء
-    buyConditions: [
-      stock.rsi < 35 ? "✅ RSI في منطقة شراء (أقل من 35)" : stock.rsi > 70 ? "❌ RSI في منطقة بيع (أكبر من 70)" : "🟡 RSI محايد",
-      stock.macd.histogram > 0 ? "✅ MACD إيجابي - زخم صاعد" : "❌ MACD سلبي - زخم هابط",
-      stock.price > stock.sma50 ? "✅ السعر فوق المتوسط المتحرك 50" : "❌ السعر تحت المتوسط المتحرك 50",
-      stock.price > stock.sma200 ? "✅ السعر فوق المتوسط المتحرك 200 (اتجاه عام صاعد)" : "❌ السعر تحت المتوسط المتحرك 200 (اتجاه عام هابط)",
-      stock.changePercent > 0 ? "✅ السعر في ارتفاع اليوم" : "❌ السعر في انخفاض اليوم"
-    ],
-    buyConditionsCount: [stock.rsi < 35, stock.macd.histogram > 0, stock.price > stock.sma50, stock.price > stock.sma200, stock.changePercent > 0].filter(Boolean).length,
-    
-    // الأهداف وإدارة المخاطر
-    targets: stock.targets,
-    stopLoss: stock.stopLoss,
-    riskReward: +(((stock.targets[1].price - stock.price) / (stock.price - stock.stopLoss))).toFixed(2),
-    
-    // التوصية النهائية
-    recommendation: stock.signal === 'STRONG_BUY' ? "شراء قوي - فرصة ممتازة" :
-                    stock.signal === 'BUY' ? "شراء - فرصة جيدة" :
-                    stock.signal === 'SELL' ? "بيع - يفضل الخروج" :
-                    stock.signal === 'WATCH' ? "مراقبة - انتظر إشارة أوضح" : "محايد - لا توجد توصية واضحة",
-    
+  if (!stock) return res.json({ error: true, message: "⚠️ بيانات السهم غير متوفرة حالياً" });
+
+  const buyConditions = [
+    stock.rsi < 35 ? "✅ RSI في منطقة شراء (أقل من 35)" : stock.rsi > 70 ? "❌ RSI في منطقة بيع (أكبر من 70)" : "🟡 RSI محايد",
+    stock.macd.histogram > 0 ? "✅ MACD إيجابي - زخم صاعد" : "❌ MACD سلبي - زخم هابط",
+    stock.price > stock.sma50 ? "✅ السعر فوق المتوسط المتحرك 50" : "❌ السعر تحت المتوسط المتحرك 50",
+    stock.price > stock.sma200 ? "✅ السعر فوق المتوسط المتحرك 200 (اتجاه عام صاعد)" : "❌ السعر تحت المتوسط المتحرك 200 (اتجاه عام هابط)",
+    stock.changePercent > 0 ? "✅ السعر في ارتفاع اليوم" : "❌ السعر في انخفاض اليوم"
+  ];
+  const buyConditionsCount = buyConditions.filter(c => c.startsWith('✅')).length;
+  const riskReward = (stock.targets[1] && stock.stopLoss) ? +(((stock.targets[1].price - stock.price) / (stock.price - stock.stopLoss))).toFixed(2) : 0;
+
+  res.json({
+    symbol: stock.symbol, name: stock.name, sector: stock.sector, market: stock.market, marketCap: stock.marketCap,
+    currentPrice: stock.price, change: stock.change, changePercent: stock.changePercent,
+    volume: stock.volume, high: stock.high, low: stock.low, open: stock.open,
+    indicators: { rsi: stock.rsi, macd: stock.macd, sma50: stock.sma50, sma200: stock.sma200, bollinger: stock.bollinger, atr: stock.atr, obv: stock.obv, fibonacci: stock.fibonacci },
+    financial: { pe: stock.pe, eps: stock.eps, dividend: stock.dividend, dividendYield: +(stock.dividend / stock.price * 100).toFixed(2) },
+    signal: stock.signal, signalStrength: stock.signalStrength, score: stock.score, buyConditions, buyConditionsCount,
+    targets: stock.targets, stopLoss: stock.stopLoss, riskReward,
+    recommendation: stock.signal === 'STRONG_BUY' ? "شراء قوي - فرصة ممتازة" : stock.signal === 'BUY' ? "شراء - فرصة جيدة" : stock.signal === 'SELL' ? "بيع - يفضل الخروج" : stock.signal === 'WATCH' ? "مراقبة - انتظر إشارة أوضح" : "محايد - لا توجد توصية واضحة",
     lastUpdate: new Date()
-  };
-  
-  res.json(analysis);
+  });
 });
 
+// ==================== تشغيل الخادم ====================
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log(`🚀 الخادم يعمل على http://localhost:${PORT}`);
-  console.log(`✅ عدد الأسهم المتاحة: ${stocksDatabase.length} سهم`);
-});
+app.listen(PORT, () => console.log(`✅ Server live on port ${PORT}, monitoring ${stocksData.length} stocks.`));
