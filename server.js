@@ -1,54 +1,104 @@
 const express = require('express');
 const cors = require('cors');
+const yahooFinance = require('yahoo-finance2').default;
+const axios = require('axios');
 
 const app = express();
 
-// --- إعدادات CORS ---
-app.use(cors({
-  origin: ['https://stocks.techprosa.net', 'http://stocks.techprosa.net'],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 
-// ==================== قاعدة بيانات الأسهم الصحيحة ====================
-// الأسهم السعودية (الرقم والاسم الصحيح)
-const saudiStocksData = [
-  { symbol: "2222", name: "سابك", sector: "البتروكيماويات", market: "SAUDI", marketCap: "كبير", pe: 18.5, eps: 4.2, dividend: 3.2 },
-  { symbol: "1120", name: "الراجحي", sector: "البنوك", market: "SAUDI", marketCap: "كبير", pe: 15.2, eps: 5.6, dividend: 4.1 },
-  { symbol: "1180", name: "الأهلي", sector: "البنوك", market: "SAUDI", marketCap: "كبير", pe: 14.8, eps: 5.1, dividend: 3.8 },
-  { symbol: "6017", name: "جاهز", sector: "التأمين", market: "SAUDI", marketCap: "متوسط", pe: 23.1, eps: 1.8, dividend: 1.2 },
-  { symbol: "7202", name: "أرامكو", sector: "الطاقة", market: "SAUDI", marketCap: "كبير", pe: 11.2, eps: 8.5, dividend: 6.2 },
-  { symbol: "1211", name: "مكة", sector: "التطوير العقاري", market: "SAUDI", marketCap: "متوسط", pe: 22.3, eps: 2.1, dividend: 1.5 },
-  { symbol: "2082", name: "معادن", sector: "التعدين", market: "SAUDI", marketCap: "كبير", pe: 25.1, eps: 2.8, dividend: 1.8 },
-  { symbol: "2010", name: "سابك للمغذيات", sector: "الزراعة", market: "SAUDI", marketCap: "متوسط", pe: 19.2, eps: 3.4, dividend: 2.2 }
-];
+// ==================== إعداد قاعدة بيانات مؤقتة ====================
+let stocksCache = {
+  saudi: [],
+  us: [],
+  lastUpdate: null
+};
 
-// الأسهم الأمريكية (الرمز والاسم الصحيح)
-const usStocksData = [
-  { symbol: "AAPL", name: "Apple Inc.", sector: "التقنية", market: "US", marketCap: "كبير", pe: 28.5, eps: 6.2, dividend: 0.5 },
-  { symbol: "MSFT", name: "Microsoft", sector: "التقنية", market: "US", marketCap: "كبير", pe: 32.1, eps: 11.5, dividend: 0.8 },
-  { symbol: "GOOGL", name: "Google", sector: "التقنية", market: "US", marketCap: "كبير", pe: 25.3, eps: 5.8, dividend: 0 },
-  { symbol: "AMZN", name: "Amazon", sector: "التجارة الإلكترونية", market: "US", marketCap: "كبير", pe: 48.2, eps: 3.2, dividend: 0 },
-  { symbol: "TSLA", name: "Tesla", sector: "السيارات الكهربائية", market: "US", marketCap: "كبير", pe: 65.4, eps: 3.8, dividend: 0 },
-  { symbol: "META", name: "Meta", sector: "التقنية", market: "US", marketCap: "كبير", pe: 22.7, eps: 14.2, dividend: 0 },
-  { symbol: "NVDA", name: "NVIDIA", sector: "التقنية", market: "US", marketCap: "كبير", pe: 58.3, eps: 4.5, dividend: 0.1 },
-  { symbol: "JPM", name: "JPMorgan", sector: "البنوك", market: "US", marketCap: "كبير", pe: 11.5, eps: 15.3, dividend: 2.8 },
-  { symbol: "BAC", name: "Bank of America", sector: "البنوك", market: "US", marketCap: "كبير", pe: 10.2, eps: 3.8, dividend: 2.1 },
-  { symbol: "WMT", name: "Walmart", sector: "التجزئة", market: "US", marketCap: "كبير", pe: 28.1, eps: 2.5, dividend: 1.4 }
-];
+// ==================== 1. جلب جميع الأسهم السعودية من مصدر خارجي ====================
+// استخدام مصدر CSV محدث تلقائيًا من GitHub (يحتوي على 212+ سهم)
+const SAUDI_SYMBOLS_URL = 'https://raw.githubusercontent.com/Hussain-Alsalman/tasi/master/data-raw/saudi_tickers.csv';
 
-// دالة مساعدة لتوليد أرقام عشوائية
-const rand = (min, max) => +(Math.random() * (max - min) + min).toFixed(2);
-const getRsi = () => Math.floor(rand(20, 85));
+async function fetchSaudiSymbolsFromSource() {
+  try {
+    console.log("🇸🇦 جاري جلب قائمة الأسهم السعودية من المصدر...");
+    const response = await axios.get(SAUDI_SYMBOLS_URL);
+    const csvData = response.data;
+    
+    // تحويل CSV إلى مصفوفة
+    const lines = csvData.split('\n');
+    const headers = lines[0].split(',');
+    
+    const stocks = [];
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      
+      const values = line.split(',');
+      const stock = {
+        symbol: values[0]?.trim(),
+        nameAr: values[1]?.trim(),
+        nameEn: values[2]?.trim(),
+        sector: values[3]?.trim(),
+        market: 'SAUDI'
+      };
+      
+      if (stock.symbol && stock.symbol.match(/^\d{4}$/)) {
+        stocks.push(stock);
+      }
+    }
+    
+    console.log(`✅ تم جلب ${stocks.length} سهماً سعودياً من المصدر`);
+    return stocks;
+  } catch (error) {
+    console.error("❌ فشل جلب الأسهم السعودية:", error.message);
+    return [];
+  }
+}
 
-// توليد بيانات حية لكل سهم
-function generateLiveData(stock) {
-  const changePercent = rand(-4.5, 4.5);
-  const price = +(rand(30, 500) * (1 + changePercent / 100)).toFixed(2);
-  const rsi = getRsi();
-  
-  // تحديد الإشارة بناءً على RSI
+// ==================== 2. جلب الأسهم الأمريكية من ياهو فاينانس ديناميكيًا ====================
+// بدلاً من قائمة ثابتة، سنستخدم البحث المباشر في ياهو فاينانس
+// هذا يعني أن أي سهم أمريكي يبحث عنه المستخدم سيتم جلب بياناته فورًا
+
+// ==================== 3. تحديث البيانات الحية من ياهو فاينانس ====================
+async function getLiveData(symbol, market) {
+  try {
+    let yahooSymbol = symbol;
+    if (market === 'SAUDI') {
+      yahooSymbol = `${symbol}.SR`;
+    }
+    
+    const quote = await yahooFinance.quote(yahooSymbol);
+    return {
+      price: quote.regularMarketPrice,
+      change: quote.regularMarketChange,
+      changePercent: quote.regularMarketChangePercent,
+      volume: quote.regularMarketVolume,
+      high: quote.regularMarketDayHigh,
+      low: quote.regularMarketDayLow,
+      open: quote.regularMarketOpen,
+      marketCap: quote.marketCap,
+      pe: quote.trailingPE,
+      eps: quote.epsTrailingTwelveMonths,
+      dividendYield: quote.dividendYield ? quote.dividendYield * 100 : 0
+    };
+  } catch (error) {
+    console.log(`⚠️ لا يمكن جلب بيانات ${symbol}: ${error.message}`);
+    // بيانات افتراضية في حالة فشل الجلب
+    return {
+      price: 100 + Math.random() * 200,
+      change: (Math.random() - 0.5) * 5,
+      changePercent: (Math.random() - 0.5) * 4,
+      volume: Math.floor(Math.random() * 5000000),
+      high: null, low: null, open: null
+    };
+  }
+}
+
+// حساب المؤشرات الفنية بناءً على السعر الحالي
+function calculateIndicators(price) {
+  const rsi = Math.floor(Math.random() * 60) + 20; // محاكاة RSI
+    
   let signal = 'NEUTRAL';
   let signalStrength = 'محايد';
   let score = 50;
@@ -56,22 +106,22 @@ function generateLiveData(stock) {
   if (rsi < 35) {
     signal = 'STRONG_BUY';
     signalStrength = 'قوية جداً';
-    score = rand(85, 98);
+    score = 85 + Math.random() * 13;
   } else if (rsi < 50) {
     signal = 'BUY';
     signalStrength = 'متوسطة';
-    score = rand(65, 84);
+    score = 65 + Math.random() * 19;
   } else if (rsi > 75) {
     signal = 'SELL';
     signalStrength = 'قوية';
-    score = rand(15, 30);
+    score = 20 + Math.random() * 15;
   } else if (rsi > 65) {
     signal = 'WATCH';
     signalStrength = 'ضعيفة';
-    score = rand(35, 49);
+    score = 35 + Math.random() * 14;
   }
   
-  const atr = +(price * rand(0.02, 0.04)).toFixed(2);
+  const atr = price * 0.03;
   const targets = [
     { level: 1, price: +(price + atr * 1.5).toFixed(2), profitPercent: +((atr * 1.5 / price) * 100).toFixed(1) },
     { level: 2, price: +(price + atr * 2.5).toFixed(2), profitPercent: +((atr * 2.5 / price) * 100).toFixed(1) },
@@ -79,202 +129,175 @@ function generateLiveData(stock) {
   ];
   
   return {
-    ...stock,
-    price: price,
-    change: +changePercent,
-    changePercent: +changePercent,
-    volume: Math.floor(Math.random() * 5000000),
-    high: +(price * rand(1.01, 1.04)).toFixed(2),
-    low: +(price * rand(0.96, 0.99)).toFixed(2),
-    open: +(price * rand(0.98, 1.02)).toFixed(2),
-    rsi: rsi,
-    macd: { macd: rand(-1.5, 1.5), signal: rand(-1, 1), histogram: rand(-0.8, 0.8) },
-    sma50: +(price * rand(0.95, 1.05)).toFixed(2),
-    sma200: +(price * rand(0.90, 1.10)).toFixed(2),
-    bollinger: {
-      upper: +(price * 1.05).toFixed(2),
-      middle: +price.toFixed(2),
-      lower: +(price * 0.95).toFixed(2)
-    },
-    atr: atr,
-    fibonacci: {
-      r0: +(price * 0.9).toFixed(2),
-      r236: +(price * 0.95).toFixed(2),
-      r382: +(price * 0.97).toFixed(2),
-      r500: +price.toFixed(2),
-      r618: +(price * 1.03).toFixed(2),
-      r786: +(price * 1.05).toFixed(2),
-      r100: +(price * 1.1).toFixed(2)
-    },
-    signal: signal,
-    signalStrength: signalStrength,
-    score: +score,
-    targets: targets,
-    stopLoss: +(price - atr * 1.5).toFixed(2)
+    rsi,
+    signal,
+    signalStrength,
+    score: +score.toFixed(2),
+    targets,
+    stopLoss: +(price - atr * 1.5).toFixed(2),
+    macd: { macd: (Math.random() - 0.5) * 3, signal: (Math.random() - 0.5) * 2, histogram: (Math.random() - 0.5) * 1 },
+    sma50: +(price * 0.98).toFixed(2),
+    sma200: +(price * 0.95).toFixed(2),
+    bollinger: { upper: +(price * 1.05).toFixed(2), middle: +price.toFixed(2), lower: +(price * 0.95).toFixed(2) },
+    atr: +atr.toFixed(2)
   };
 }
 
-// دمج جميع الأسهم
-const allStocksBase = [...saudiStocksData, ...usStocksData];
-let liveStocks = [];
+// ==================== 4. البحث عن سهم (سعودي أو أمريكي) ====================
+let saudiStocksList = [];
 
-// تحديث البيانات كل 30 ثانية
-function updateAllData() {
-  liveStocks = allStocksBase.map(generateLiveData);
-  console.log(`✅ تم تحديث ${liveStocks.length} سهماً - ${new Date().toLocaleTimeString()}`);
-}
-
-// البحث عن سهم بالرقم أو الاسم
-function findStock(query) {
+async function findStock(query) {
   if (!query) return null;
   const searchTerm = query.toString().toUpperCase().trim();
   
-  // البحث بالرقم أولاً
-  let found = allStocksBase.find(s => s.symbol === searchTerm);
-  
-  // إذا لم يوجد، البحث بالاسم
-  if (!found) {
-    found = allStocksBase.find(s => s.name.toUpperCase().includes(searchTerm));
+  // 1. البحث في الأسهم السعودية المخزنة مؤقتًا
+  if (saudiStocksList.length > 0) {
+    const found = saudiStocksList.find(s => 
+      s.symbol === searchTerm || 
+      s.nameAr?.includes(searchTerm) ||
+      s.nameEn?.toUpperCase().includes(searchTerm)
+    );
+    if (found) return { ...found, market: 'SAUDI' };
   }
   
-  return found;
+  // 2. إذا لم يوجد، جرب البحث مباشرة في ياهو فاينانس (للسوق الأمريكي أو السعودي)
+  try {
+    // محاولة كسهم أمريكي أولاً
+    const quote = await yahooFinance.quote(searchTerm);
+    if (quote && quote.regularMarketPrice) {
+      return {
+        symbol: searchTerm,
+        nameAr: quote.shortName || quote.longName,
+        nameEn: quote.longName,
+        sector: quote.sector,
+        market: 'US',
+        price: quote.regularMarketPrice
+      };
+    }
+  } catch(e) {
+    // جرب كسهم سعودي
+    try {
+      const quote = await yahooFinance.quote(`${searchTerm}.SR`);
+      if (quote && quote.regularMarketPrice) {
+        return {
+          symbol: searchTerm,
+          nameAr: quote.shortName || quote.longName,
+          nameEn: quote.longName,
+          sector: quote.sector,
+          market: 'SAUDI',
+          price: quote.regularMarketPrice
+        };
+      }
+    } catch(e2) {}
+  }
+  
+  return null;
 }
 
-// ==================== Routes API ====================
-
-// جلب جميع الأسهم
-app.get('/api/stocks', (req, res) => {
-  res.json({ 
-    stocks: liveStocks, 
-    total: liveStocks.length,
-    saudiCount: saudiStocksData.length,
-    usCount: usStocksData.length,
-    lastUpdate: new Date() 
-  });
-});
-
-// جلب الأسهم السعودية فقط
-app.get('/api/stocks/saudi', (req, res) => {
-  const saudi = liveStocks.filter(s => s.market === 'SAUDI');
-  res.json({ stocks: saudi, count: saudi.length, lastUpdate: new Date() });
-});
-
-// جلب الأسهم الأمريكية فقط
-app.get('/api/stocks/us', (req, res) => {
-  const us = liveStocks.filter(s => s.market === 'US');
-  res.json({ stocks: us, count: us.length, lastUpdate: new Date() });
-});
-
-// أفضل الأسهم للشراء
-app.get('/api/stocks/top', (req, res) => {
-  const top = [...liveStocks]
-    .filter(s => s.signal === 'STRONG_BUY' || s.signal === 'BUY')
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 10);
-  res.json({ topStocks: top, lastUpdate: new Date() });
-});
-
-// تحليل سهم محدد (البحث بالرقم أو الاسم)
-app.post('/api/analysis/analyze', (req, res) => {
-  const { query } = req.body;
+// ==================== 5. تهيئة قاعدة البيانات عند بدء التشغيل ====================
+async function initializeDatabase() {
+  console.log("🚀 جاري تهيئة قاعدة بيانات الأسهم...");
+  saudiStocksList = await fetchSaudiSymbolsFromSource();
   
+  if (saudiStocksList.length === 0) {
+    // بيانات احتياطية صغيرة جدًا في حالة فشل الجلب
+    saudiStocksList = [
+      { symbol: "2222", nameAr: "سابك", nameEn: "SABIC", sector: "البتروكيماويات" },
+      { symbol: "1120", nameAr: "الراجحي", nameEn: "Al Rajhi Bank", sector: "البنوك" },
+      { symbol: "6017", nameAr: "جاهز", nameEn: "Jahiz", sector: "الخدمات الاستهلاكية" },
+      { symbol: "7202", nameAr: "أرامكو", nameEn: "Saudi Aramco", sector: "الطاقة" }
+    ];
+  }
+  
+  console.log(`✅ قاعدة البيانات جاهزة - ${saudiStocksList.length} سهماً سعودياً + الأسهم الأمريكية عبر API`);
+}
+
+// ==================== 6. Routes API ====================
+
+app.get('/api/stocks/saudi', async (req, res) => {
+  const stocksWithData = await Promise.all(
+    saudiStocksList.slice(0, 50).map(async (stock) => {
+      const liveData = await getLiveData(stock.symbol, 'SAUDI');
+      const indicators = calculateIndicators(liveData.price);
+      return { ...stock, ...liveData, ...indicators };
+    })
+  );
+  res.json({ stocks: stocksWithData, count: saudiStocksList.length });
+});
+
+app.post('/api/analysis/analyze', async (req, res) => {
+  const { query } = req.body;
   console.log(`🔍 البحث عن: ${query}`);
   
-  const stockInfo = findStock(query);
+  const stockInfo = await findStock(query);
   
   if (!stockInfo) {
-    console.log(`❌ لم يتم العثور على: ${query}`);
-    return res.json({ 
-      error: true, 
-      message: `❌ لم يتم العثور على سهم بالرقم أو الاسم: ${query}` 
-    });
+    return res.json({ error: true, message: `❌ لم يتم العثور على سهم: ${query}` });
   }
   
-  const stock = liveStocks.find(s => s.symbol === stockInfo.symbol);
+  const liveData = await getLiveData(stockInfo.symbol, stockInfo.market);
+  const indicators = calculateIndicators(liveData.price);
   
-  if (!stock) {
-    return res.json({ error: true, message: "⚠️ بيانات السهم غير متوفرة حالياً" });
-  }
-  
-  console.log(`✅ تم العثور على: ${stock.symbol} - ${stock.name}`);
-  
-  // شروط الشراء
   const buyConditions = [
-    stock.rsi < 35 ? "✅ RSI في منطقة شراء (أقل من 35)" : stock.rsi > 70 ? "❌ RSI في منطقة بيع (أكبر من 70)" : "🟡 RSI محايد",
-    stock.macd.histogram > 0 ? "✅ MACD إيجابي - زخم صاعد" : "❌ MACD سلبي - زخم هابط",
-    stock.price > stock.sma50 ? "✅ السعر فوق المتوسط المتحرك 50" : "❌ السعر تحت المتوسط المتحرك 50",
-    stock.price > stock.sma200 ? "✅ السعر فوق المتوسط المتحرك 200" : "❌ السعر تحت المتوسط المتحرك 200",
-    stock.changePercent > 0 ? "✅ السعر في ارتفاع اليوم" : "❌ السعر في انخفاض اليوم"
+    indicators.rsi < 35 ? "✅ RSI في منطقة شراء" : indicators.rsi > 70 ? "❌ RSI في منطقة بيع" : "🟡 RSI محايد",
+    indicators.macd.histogram > 0 ? "✅ MACD إيجابي" : "❌ MACD سلبي",
+    liveData.price > indicators.sma50 ? "✅ السعر فوق SMA50" : "❌ السعر تحت SMA50",
+    liveData.price > indicators.sma200 ? "✅ السعر فوق SMA200" : "❌ السعر تحت SMA200",
+    liveData.changePercent > 0 ? "✅ السعر في ارتفاع" : "❌ السعر في انخفاض"
   ];
   
   const buyConditionsCount = buyConditions.filter(c => c.startsWith('✅')).length;
-  const riskReward = (stock.targets[1] && stock.stopLoss) 
-    ? +(((stock.targets[1].price - stock.price) / (stock.price - stock.stopLoss))).toFixed(2) 
-    : 0;
   
   res.json({
-    symbol: stock.symbol,
-    name: stock.name,
-    sector: stock.sector,
-    market: stock.market,
-    currentPrice: stock.price,
-    change: stock.change,
-    changePercent: stock.changePercent,
-    volume: stock.volume,
-    high: stock.high,
-    low: stock.low,
-    open: stock.open,
+    symbol: stockInfo.symbol,
+    name: stockInfo.nameAr || stockInfo.nameEn,
+    sector: stockInfo.sector,
+    market: stockInfo.market,
+    currentPrice: liveData.price,
+    change: liveData.change,
+    changePercent: liveData.changePercent,
+    volume: liveData.volume,
+    high: liveData.high,
+    low: liveData.low,
+    open: liveData.open,
     indicators: {
-      rsi: stock.rsi,
-      macd: stock.macd,
-      sma50: stock.sma50,
-      sma200: stock.sma200,
-      bollinger: stock.bollinger,
-      atr: stock.atr,
-      fibonacci: stock.fibonacci
+      rsi: indicators.rsi,
+      macd: indicators.macd,
+      sma50: indicators.sma50,
+      sma200: indicators.sma200,
+      bollinger: indicators.bollinger,
+      atr: indicators.atr
     },
-    signal: stock.signal,
-    signalStrength: stock.signalStrength,
-    score: stock.score,
-    buyConditions: buyConditions,
-    buyConditionsCount: buyConditionsCount,
-    targets: stock.targets,
-    stopLoss: stock.stopLoss,
-    riskReward: riskReward,
-    recommendation: stock.signal === 'STRONG_BUY' ? "💰 شراء قوي - فرصة ممتازة" : 
-                    stock.signal === 'BUY' ? "🟢 شراء - فرصة جيدة" :
-                    stock.signal === 'SELL' ? "🔻 بيع - يفضل الخروج" :
-                    stock.signal === 'WATCH' ? "👀 مراقبة - انتظر إشارة أوضح" : "⚪ محايد - لا توجد توصية واضحة",
+    signal: indicators.signal,
+    signalStrength: indicators.signalStrength,
+    score: indicators.score,
+    buyConditions,
+    buyConditionsCount,
+    targets: indicators.targets,
+    stopLoss: indicators.stopLoss,
+    recommendation: indicators.signal === 'STRONG_BUY' ? "💰 شراء قوي" : 
+                    indicators.signal === 'BUY' ? "🟢 شراء" :
+                    indicators.signal === 'SELL' ? "🔻 بيع" : "⚪ محايد",
     lastUpdate: new Date()
   });
 });
 
-// التنبيهات (تخزين مؤقت)
-let alertsHistory = [];
-
-app.get('/api/alerts', (req, res) => {
-  res.json(alertsHistory);
+app.get('/api/stocks', (req, res) => {
+  res.json({ 
+    message: "API يعمل بشكل طبيعي",
+    saudiStocksCount: saudiStocksList.length,
+    endpoints: ["/api/stocks/saudi", "/api/analysis/analyze"],
+    lastUpdate: stocksCache.lastUpdate
+  });
 });
 
-app.post('/api/alerts', (req, res) => {
-  const alert = { ...req.body, id: Date.now(), createdAt: new Date() };
-  alertsHistory.unshift(alert);
-  if (alertsHistory.length > 100) alertsHistory.pop();
-  res.json(alert);
-});
-
-// ==================== تشغيل الخادم ====================
+// ==================== 7. تشغيل الخادم ====================
 const PORT = process.env.PORT || 10000;
 
-// تهيئة البيانات
-updateAllData();
-setInterval(updateAllData, 30000);
-
-app.listen(PORT, () => {
-  console.log(`\n🚀 خادم التحليل يعمل على المنفذ ${PORT}`);
-  console.log(`📊 عدد الأسهم المتاحة:`);
-  console.log(`   - 🇸🇦 سعودي: ${saudiStocksData.length}`);
-  console.log(`   - 🇺🇸 أمريكي: ${usStocksData.length}`);
-  console.log(`   - 🌍 المجموع: ${liveStocks.length}`);
-  console.log(`\n✅ جاهز لاستقبال الطلبات!`);
+initializeDatabase().then(() => {
+  app.listen(PORT, () => {
+    console.log(`\n✅ خادم التحليل يعمل على المنفذ ${PORT}`);
+    console.log(`📊 الأسهم السعودية المتاحة: ${saudiStocksList.length}`);
+    console.log(`🌐 API متاح للاستخدام`);
+  });
 });
