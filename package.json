@@ -1,24 +1,13 @@
 {
   "name": "stock-monitor-backend",
   "version": "1.0.0",
-  "description": "Stock monitoring and analysis backend API",
+  "description": "Stock monitoring API",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
+    "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "axios": "^1.6.0",
-    "node-cron": "^3.0.3",
-    "technicalindicators": "^3.1.0",
-    "yahoo-finance2": "^2.11.3",
-    "socket.io": "^4.5.4",
-    "nodemailer": "^6.9.7"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.1"
+    "cors": "^2.8.5"
   }
 }
