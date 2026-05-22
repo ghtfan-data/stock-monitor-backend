@@ -1,7 +1,6 @@
 {
   "name": "stock-monitor-backend",
   "version": "1.0.0",
-  "description": "Stock monitoring API",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
